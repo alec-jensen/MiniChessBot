@@ -1,4 +1,9 @@
-﻿using ChessChallenge.API;
+﻿/*
+    I am NOT a C# developer. I have never written a line of C# code before this.
+    I have tried my best :)
+*/
+
+using ChessChallenge.API;
 using System;
 using System.Collections.Generic;
 using System.Linq;
