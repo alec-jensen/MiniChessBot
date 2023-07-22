@@ -18,7 +18,6 @@ public class MyBot : IChessBot
     mobilityWeight = 0.5, 
     kingSafetyWeight = 0.3, 
     capturingWeight = 0.6, 
-    capturedWeight = 0.6, 
     distanceWeight = 0.4, 
     repetitionWeight = 0.5;
 
@@ -32,7 +31,7 @@ public class MyBot : IChessBot
 
     public Move Think(Board board, Timer timer)
     {
-        int maxDepth = (timer.MillisecondsRemaining + timer.MillisecondsElapsedThisTurn) / timer.MillisecondsRemaining < 0.33 ? 2 : 3; // Reduce depth if time is low
+        int maxDepth = 3;
         
         Move bestMove = Move.NullMove;
         int bestScore = int.MinValue;
@@ -54,10 +53,6 @@ public class MyBot : IChessBot
                 // Update evaluation weights based on the game phase
                 double weight = board.GetAllPieceLists().Sum(pl => pl.Count) <= 12 ? kingSafetyWeight : (board.GetAllPieceLists().Sum(pl => pl.Count) <= 24 ? mobilityWeight : materialWeight);
 
-                // Adjust weight based on remaining time
-                double timeFactor = timer.MillisecondsRemaining / (double)timer.MillisecondsElapsedThisTurn;
-                weight *= timeFactor;
-
                 // Evaluate the move using the advanced evaluation function and minimax
                 board.MakeMove(move);
                 int score = (int)(EvaluatePiece(board, board.GetPiece(move.TargetSquare)) * weight) + Minimax(board, depth - 1, false); // Use minimax for deeper evaluations
@@ -70,7 +65,6 @@ public class MyBot : IChessBot
                 }
             }
         }
-
         AddMove(bestMove);
         return bestMove;
     }
@@ -80,13 +74,12 @@ public class MyBot : IChessBot
         if (depth == 0 || board.IsInCheckmate())
         {
             int score = 0;
-            foreach (PieceList pieceList in board.GetAllPieceLists())
+
+            foreach (Piece piece in GetPieces(board))
             {
-                foreach (Piece piece in pieceList)
-                {
-                    score += EvaluatePiece(board, piece);
-                }
+                score += EvaluatePiece(board, piece);
             }
+
             return (Move.NullMove, score);
         }
 
@@ -151,19 +144,17 @@ public class MyBot : IChessBot
         if (depth == 0 || board.IsInCheckmate())
         {
             int score = 0;
-            foreach (PieceList pieceList in board.GetAllPieceLists())
+            
+            foreach (Piece piece in GetPieces(board))
             {
-                foreach (Piece piece in pieceList)
-                {
-                    score += EvaluatePiece(board, piece);
-                }
+                score += EvaluatePiece(board, piece);
             }
             return score;
         }
 
         int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
 
-        foreach (Move move in board.GetLegalMoves())
+        foreach (Move move in OrderMoves(board.GetLegalMoves()))
         {
             board.MakeMove(move);
             int score = Minimax(board, depth - 1, !isMaximizingPlayer);
@@ -188,7 +179,6 @@ public class MyBot : IChessBot
         int mobilityScore = 0;
         int kingSafetyScore = 0;
         int capturingScore = 0;
-        int capturedScore = 0;
         int distanceScore = 0;
         int repetitionScore = 0;
 
@@ -203,7 +193,7 @@ public class MyBot : IChessBot
         {
             if (move.StartSquare == piece.Square)
             {
-                mobilityScore += piece.IsWhite ? 1 : -1;
+                mobilityScore += (piece.IsWhite ? 1 : -1) * pieceValue;
             }
         }
 
@@ -225,20 +215,15 @@ public class MyBot : IChessBot
             }
         }
 
-        // Evaluate captured score
+        // Evaluate distance score
         foreach (Move move in board.GetLegalMoves())
         {
-            if (move.IsCapture && move.TargetSquare == piece.Square)
+            if (move.StartSquare == piece.Square)
             {
-                Piece capturedPiece = board.GetPiece(move.StartSquare);
-                int capturedPieceValue = pieceValues[(int)capturedPiece.PieceType];
-                capturedScore += capturedPieceValue;
+                int distance = Math.Abs(move.StartSquare.File - move.TargetSquare.File) + Math.Abs(move.StartSquare.Rank - move.TargetSquare.Rank);
+                distanceScore += distance;
             }
         }
-
-        // Evaluate distance score
-        int rowDistance = piece.IsWhite ? 7 - piece.Square.Rank : piece.Square.Rank;
-        distanceScore += rowDistance;
 
         // Evaluate repetition score
         foreach (Move previousMove in previousMoves)
@@ -254,7 +239,6 @@ public class MyBot : IChessBot
                               mobilityWeight * mobilityScore +
                               kingSafetyWeight * kingSafetyScore +
                               capturingWeight * capturingScore +
-                              capturedWeight * capturedScore +
                               distanceWeight * distanceScore +
                               repetitionWeight * repetitionScore);
 
@@ -264,29 +248,13 @@ public class MyBot : IChessBot
     // Helper method to get the count of pieces of a given type and color
     private int GetPieceCount(Board board, PieceType pieceType, bool isWhite)
     {
-        int count = 0;
-        foreach (Piece piece in GetPieces(board, pieceType))
-        {
-            if (piece.IsWhite == isWhite)
-                count++;
-        }
-        return count;
+        return GetPieces(board).Count(piece => piece.IsWhite == isWhite && piece.PieceType == pieceType);
     }
 
-    private List<Piece> GetPieces(Board board, PieceType pieceType)
+    private IEnumerable<Piece> GetPieces(Board board)
     {
-        List<Piece> pieces = new List<Piece>();
-        foreach (PieceList pieceList in board.GetAllPieceLists())
-        {
-            foreach (Piece piece in pieceList)
-            {
-                if (piece.PieceType == pieceType)
-                {
-                    pieces.Add(piece);
-                }
-            }
-        }
-
-        return pieces;
+        return board.GetAllPieceLists()
+                    .SelectMany(pieceList => pieceList)
+                    .Where(piece => piece != null);
     }
 }
