@@ -1,6 +1,7 @@
 ﻿using ChessChallenge.API;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 public class MyBot : IChessBot
 {
@@ -8,40 +9,35 @@ public class MyBot : IChessBot
     int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };
 
     // Evaluation weights for different factors
-    double materialWeight = 1.0;
-    double mobilityWeight = 0.5;
-    double kingSafetyWeight = 0.3;
-    double capturingWeight = 0.6;
-    double capturedWeight = -0.6;
-    double distanceWeight = 0.4;
-    double repetitionWeight = -0.5;
+    double materialWeight = 1.0, 
+    mobilityWeight = 0.5, 
+    kingSafetyWeight = 0.3, 
+    capturingWeight = 0.6, 
+    capturedWeight = 0.6, 
+    distanceWeight = 0.4, 
+    repetitionWeight = 0.5;
 
     Queue<Move> previousMoves = new Queue<Move>();
 
     public void AddMove(Move move)
     {
         previousMoves.Enqueue(move);
-        if (previousMoves.Count > 2)
-        {
-            previousMoves.Dequeue();
-        }
+        if (previousMoves.Count > 2) previousMoves.Dequeue();
     }
 
     public Move Think(Board board, Timer timer)
     {
-        int maxDepth = 3; // Maximum depth for iterative deepening
-        if ((timer.MillisecondsRemaining + timer.MillisecondsElapsedThisTurn) / timer.MillisecondsRemaining < 0.33)
-        {
-            maxDepth = 2; // Reduce depth if time is low
-        }
-        System.Console.WriteLine($"Depth: {maxDepth}, {(timer.MillisecondsRemaining + timer.MillisecondsElapsedThisTurn) / timer.MillisecondsRemaining}");
+        int maxDepth = (timer.MillisecondsRemaining + timer.MillisecondsElapsedThisTurn) / timer.MillisecondsRemaining < 0.33 ? 2 : 3; // Reduce depth if time is low
+        
         Move bestMove = Move.NullMove;
         int bestScore = int.MinValue;
+
+        List<Move> orderedMoves = OrderMoves(board.GetLegalMoves());
 
         // Iterative Deepening
         for (int depth = 1; depth <= maxDepth; depth++)
         {
-            foreach (Move move in board.GetLegalMoves())
+            foreach (Move move in orderedMoves)
             {
                 // Play immediate checkmate if possible
                 if (board.IsInCheckmate())
@@ -51,37 +47,15 @@ public class MyBot : IChessBot
                 }
 
                 // Update evaluation weights based on the game phase
-                double weight;
-                int pieceCount = -1;
-                foreach (PieceList pieceList in board.GetAllPieceLists())
-                {
-                    pieceCount += pieceList.Count;
-                }
-                if (pieceCount <= 12)
-                {
-                    weight = kingSafetyWeight; // Endgame
-                }
-                else if (pieceCount <= 24)
-                {
-                    weight = mobilityWeight; // Middle game
-                }
-                else
-                {
-                    weight = materialWeight; // Opening
-                }
+                double weight = board.GetAllPieceLists().Sum(pl => pl.Count) <= 12 ? kingSafetyWeight : (board.GetAllPieceLists().Sum(pl => pl.Count) <= 24 ? mobilityWeight : materialWeight);
 
                 // Adjust weight based on remaining time
                 double timeFactor = timer.MillisecondsRemaining / (double)timer.MillisecondsElapsedThisTurn;
                 weight *= timeFactor;
 
-                // Evaluate the move using the advanced evaluation function
+                // Evaluate the move using the advanced evaluation function and minimax
                 board.MakeMove(move);
-                int score = (int)(EvaluatePiece(board, board.GetPiece(move.TargetSquare)) * weight);
-                board.UndoMove(move);
-
-                // Use the minimax algorithm to evaluate deeper levels
-                board.MakeMove(move);
-                score += Minimax(board, depth - 1, false); // Use minimax for deeper evaluations
+                int score = (int)(EvaluatePiece(board, board.GetPiece(move.TargetSquare)) * weight) + Minimax(board, depth - 1, false); // Use minimax for deeper evaluations
                 board.UndoMove(move);
 
                 if (score > bestScore)
@@ -146,6 +120,7 @@ public class MyBot : IChessBot
 
         return (bestMove, bestScore);
     }
+
 
     private List<Move> OrderMoves(Move[] moves)
     {
