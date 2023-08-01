@@ -23,6 +23,7 @@ namespace ChessChallenge.Application
         }
 
         // Game state
+        readonly Random rng;
         int gameID;
         bool isPlaying;
         Board board;
@@ -52,14 +53,16 @@ namespace ChessChallenge.Application
         readonly BoardUI boardUI;
         readonly MoveGenerator moveGenerator;
         readonly int tokenCount;
+        readonly int debugTokenCount;
         readonly StringBuilder pgns;
 
         public ChallengeController()
         {
             Log($"Launching Chess-Challenge version {Settings.Version}");
-            tokenCount = GetTokenCount();
+            (tokenCount, debugTokenCount) = GetTokenCount();
             Warmer.Warm();
 
+            rng = new Random();
             moveGenerator = new();
             boardUI = new BoardUI();
             board = new Board();
@@ -77,7 +80,7 @@ namespace ChessChallenge.Application
         {
             // End any ongoing game
             EndGame(GameResult.DrawByArbiter, log: false, autoStartNextBotMatch: false);
-            gameID++;
+            gameID = rng.Next();
 
             // Stop prev task and create a new one
             if (RunBotsOnSeparateThread)
@@ -140,12 +143,10 @@ namespace ChessChallenge.Application
 
         Move GetBotMove()
         {
-            // Board b = new Board();
-            // b.LoadPosition(FenUtility.CurrentFen(board));
-            API.Board botBoard = new(new(board));
+            API.Board botBoard = new(board);
             try
             {
-                API.Timer timer = new(PlayerToMove.TimeRemainingMs);
+                API.Timer timer = new(PlayerToMove.TimeRemainingMs, PlayerNotOnMove.TimeRemainingMs, GameDurationMilliseconds, IncrementMilliseconds);
                 API.Move move = PlayerToMove.Bot.Think(botBoard, timer);
                 return new Move(move.RawValue);
             }
@@ -213,7 +214,7 @@ namespace ChessChallenge.Application
             };
         }
 
-        static int GetTokenCount()
+        static (int totalTokenCount, int debugTokenCount) GetTokenCount()
         {
             string path = Path.Combine(Directory.GetCurrentDirectory(), "src", "My Bot", "MyBot.cs");
 
@@ -226,6 +227,7 @@ namespace ChessChallenge.Application
         {
             if (IsLegal(chosenMove))
             {
+                PlayerToMove.AddIncrement(IncrementMilliseconds);
                 if (PlayerToMove.IsBot)
                 {
                     moveToPlay = chosenMove;
@@ -275,6 +277,7 @@ namespace ChessChallenge.Application
             {
                 isPlaying = false;
                 isWaitingToPlayMove = false;
+                gameID = -1;
 
                 if (log)
                 {
@@ -383,9 +386,10 @@ namespace ChessChallenge.Application
             string nameB = GetPlayerName(PlayerBlack);
             boardUI.DrawPlayerNames(nameW, nameB, PlayerWhite.TimeRemainingMs, PlayerBlack.TimeRemainingMs, isPlaying);
         }
+
         public void DrawOverlay()
         {
-            BotBrainCapacityUI.Draw(tokenCount, MaxTokenCount);
+            BotBrainCapacityUI.Draw(tokenCount, debugTokenCount, MaxTokenCount);
             MenuUI.DrawButtons(this);
             MatchStatsUI.DrawMatchStats(this);
         }
@@ -413,6 +417,8 @@ namespace ChessChallenge.Application
 
 
         ChessPlayer PlayerToMove => board.IsWhiteToMove ? PlayerWhite : PlayerBlack;
+        ChessPlayer PlayerNotOnMove => board.IsWhiteToMove ? PlayerBlack : PlayerWhite;
+
         public int TotalGameCount => botMatchStartFens.Length * 2;
         public int CurrGameNumber => Math.Min(TotalGameCount, botMatchGameIndex + 1);
         public string AllPGNs => pgns.ToString();
